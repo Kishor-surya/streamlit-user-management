@@ -68,7 +68,7 @@ def test_validate_upload_rows_all_valid(temp_db):
 def test_validate_upload_rows_flags_missing_fields(temp_db):
     df = pd.DataFrame([{"full_name": "", "email": ""}])
     result = validate_upload_rows(df)
-    assert result.iloc[0]["_valid"] is False
+    assert result.iloc[0]["_valid"] == False  # noqa: E712 (numpy.bool_, not a Python bool)
     assert "Missing full name" in result.iloc[0]["_error"]
     assert "Missing email" in result.iloc[0]["_error"]
 
@@ -76,14 +76,14 @@ def test_validate_upload_rows_flags_missing_fields(temp_db):
 def test_validate_upload_rows_flags_bad_email_format(temp_db):
     df = pd.DataFrame([{"full_name": "Alice", "email": "not-an-email"}])
     result = validate_upload_rows(df)
-    assert result.iloc[0]["_valid"] is False
+    assert result.iloc[0]["_valid"] == False  # noqa: E712 (numpy.bool_, not a Python bool)
     assert "Invalid email format" in result.iloc[0]["_error"]
 
 
 def test_validate_upload_rows_flags_bad_phone_format(temp_db):
     df = pd.DataFrame([{"full_name": "Alice", "email": "alice@example.com", "phone": "abc"}])
     result = validate_upload_rows(df)
-    assert result.iloc[0]["_valid"] is False
+    assert result.iloc[0]["_valid"] == False  # noqa: E712 (numpy.bool_, not a Python bool)
     assert "Invalid phone format" in result.iloc[0]["_error"]
 
 
@@ -95,8 +95,8 @@ def test_validate_upload_rows_flags_duplicate_within_file(temp_db):
         ]
     )
     result = validate_upload_rows(df)
-    assert result.iloc[0]["_valid"] is True
-    assert result.iloc[1]["_valid"] is False
+    assert result.iloc[0]["_valid"] == True  # noqa: E712 (numpy.bool_, not a Python bool)
+    assert result.iloc[1]["_valid"] == False  # noqa: E712 (numpy.bool_, not a Python bool)
     assert "Duplicate email in file" in result.iloc[1]["_error"]
 
 
@@ -104,7 +104,7 @@ def test_validate_upload_rows_flags_existing_in_db(temp_db):
     temp_db.add_user("Existing", "existing@example.com", "", 30, "Engineering", "Manager")
     df = pd.DataFrame([{"full_name": "New Name", "email": "existing@example.com"}])
     result = validate_upload_rows(df)
-    assert result.iloc[0]["_valid"] is False
+    assert result.iloc[0]["_valid"] == False  # noqa: E712 (numpy.bool_, not a Python bool)
     assert "already exists" in result.iloc[0]["_error"]
 
 
