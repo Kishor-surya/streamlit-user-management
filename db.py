@@ -92,6 +92,12 @@ def get_user(user_id):
         return dict(row) if row else None
 
 
+def get_user_by_email(email):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row else None
+
+
 def get_all_users():
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM users ORDER BY id DESC").fetchall()
