@@ -1,12 +1,16 @@
 """
-Streamlit User Management Application
-Create, Read, Update, Delete users, with list view, search, and export
-(CSV / Excel) support. Data is persisted in a local SQLite database.
+PeopleDesk — User Management Application
+Create, Read, Update, Delete users, with list view, search, bulk CSV/Excel
+import, export, and automatic welcome-email notifications. Data is persisted
+in a local SQLite database.
 """
+
+from pathlib import Path
 
 import streamlit as st
 
 import db
+from email_service import SmtpConfig, send_welcome_email
 from utils import (
     import_valid_rows,
     parse_upload,
@@ -17,14 +21,92 @@ from utils import (
     validate_user_form,
 )
 
-st.set_page_config(page_title="User Management", page_icon="👤", layout="wide")
+APP_NAME = "PeopleDesk"
+ASSETS_DIR = Path(__file__).parent / "assets"
+
+st.set_page_config(page_title=APP_NAME, page_icon="🗂️", layout="wide")
 db.init_db()
+
+CUSTOM_CSS = """
+<style>
+  .pd-logo-row {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.15rem;
+  }
+  .pd-logo-row h1 {
+      font-size: 1.45rem;
+      margin: 0;
+      line-height: 1.1;
+      background: linear-gradient(90deg, #6366f1, #22d3ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+  }
+  .pd-tagline {
+      color: #6b7280;
+      font-size: 0.8rem;
+      margin: 0 0 1rem 0;
+  }
+  div[data-testid="stMetric"] {
+      background: rgba(99, 102, 241, 0.08);
+      border-radius: 10px;
+      padding: 0.6rem 0.8rem;
+  }
+  .stButton > button, .stDownloadButton > button {
+      border-radius: 8px;
+  }
+  .pd-empty-state {
+      text-align: center;
+      padding: 1.5rem 0;
+  }
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
+def load_smtp_config():
+    """Read SMTP credentials from Streamlit secrets, if configured. Returns None otherwise."""
+    try:
+        email_secrets = st.secrets["email"]
+        return SmtpConfig(
+            sender_email=email_secrets["sender_email"],
+            sender_password=email_secrets["sender_password"],
+            host=email_secrets.get("smtp_host", "smtp.gmail.com"),
+            port=int(email_secrets.get("smtp_port", 587)),
+            use_tls=bool(email_secrets.get("use_tls", True)),
+        )
+    except Exception:
+        return None
+
+
+def notify_new_user(config, to_email, full_name, department, role):
+    """Send a welcome email. Returns (sent: bool, error_message: str | None)."""
+    try:
+        send_welcome_email(to_email, full_name, department, role, config)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def render_empty_state(message: str):
+    svg = (ASSETS_DIR / "empty_state.svg").read_text(encoding="utf-8")
+    st.markdown(
+        f'<div class="pd-empty-state">{svg}<p>{message}</p></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Sidebar navigation
 # --------------------------------------------------------------------------- #
-st.sidebar.title("👤 User Management")
+logo_svg = (ASSETS_DIR / "logo.svg").read_text(encoding="utf-8")
+st.sidebar.markdown(
+    f'<div class="pd-logo-row">{logo_svg}<h1>{APP_NAME}</h1></div>'
+    '<p class="pd-tagline">Your team, organized.</p>',
+    unsafe_allow_html=True,
+)
+
 page = st.sidebar.radio(
     "Navigate",
     ["📋 User List", "➕ Add User", "📤 Bulk Upload", "✏️ Edit / Delete User", "⬇️ Export Data"],
@@ -35,6 +117,13 @@ all_users = db.get_all_users()
 st.sidebar.metric("Total Users", len(all_users))
 st.sidebar.metric("Active Users", sum(1 for u in all_users if u["status"] == "Active"))
 
+smtp_config = load_smtp_config()
+st.sidebar.markdown("---")
+if smtp_config is None:
+    st.sidebar.caption("✉️ Welcome emails: not configured — see README.")
+else:
+    st.sidebar.caption(f"✉️ Welcome emails: enabled via {smtp_config.host}")
+
 # --------------------------------------------------------------------------- #
 # Page: User List
 # --------------------------------------------------------------------------- #
@@ -44,16 +133,18 @@ if page == "📋 User List":
     users = db.get_all_users()
     df = to_dataframe(users)
 
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        search = st.text_input("🔍 Search by name or email")
-    with col2:
-        dept_filter = st.selectbox("Department", ["All"] + db.DEPARTMENTS)
-    with col3:
-        status_filter = st.selectbox("Status", ["All"] + db.STATUSES)
+    if df.empty:
+        render_empty_state("No users yet — add one from the **Add User** page.")
+    else:
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            search = st.text_input("🔍 Search by name or email")
+        with col2:
+            dept_filter = st.selectbox("Department", ["All"] + db.DEPARTMENTS)
+        with col3:
+            status_filter = st.selectbox("Status", ["All"] + db.STATUSES)
 
-    filtered = df.copy()
-    if not filtered.empty:
+        filtered = df.copy()
         if search:
             mask = filtered["full_name"].str.contains(search, case=False, na=False) | \
                    filtered["email"].str.contains(search, case=False, na=False)
@@ -63,8 +154,8 @@ if page == "📋 User List":
         if status_filter != "All":
             filtered = filtered[filtered["status"] == status_filter]
 
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
-    st.caption(f"Showing {len(filtered)} of {len(df)} user(s).")
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        st.caption(f"Showing {len(filtered)} of {len(df)} user(s).")
 
 # --------------------------------------------------------------------------- #
 # Page: Add User
@@ -84,7 +175,7 @@ elif page == "➕ Add User":
             role = st.selectbox("Role", db.ROLES)
         status = st.radio("Status", db.STATUSES, horizontal=True)
 
-        submitted = st.form_submit_button("Add User", type="primary")
+        submitted = st.form_submit_button("Add User", type="primary", icon=":material/person_add:")
 
     if submitted:
         errors = validate_user_form(full_name, email, phone)
@@ -94,6 +185,14 @@ elif page == "➕ Add User":
         else:
             db.add_user(full_name.strip(), email.strip(), phone.strip(), int(age), department, role, status)
             st.success(f"User '{full_name}' added successfully.")
+
+            if smtp_config:
+                sent, error = notify_new_user(smtp_config, email.strip(), full_name.strip(), department, role)
+                if sent:
+                    st.info(f"📧 Welcome email sent to {email.strip()}.")
+                else:
+                    st.warning(f"User created, but the welcome email failed to send: {error}")
+
             st.rerun()
 
 # --------------------------------------------------------------------------- #
@@ -107,10 +206,11 @@ elif page == "📤 Bulk Upload":
     )
 
     st.download_button(
-        "⬇️ Download CSV template",
+        "Download template",
         data=upload_template_bytes(),
         file_name="user_upload_template.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        icon=":material/download:",
     )
 
     uploaded_file = st.file_uploader("Choose a CSV or Excel file", type=["csv", "xlsx", "xls"])
@@ -135,9 +235,29 @@ elif page == "📤 Bulk Upload":
             )
 
             if valid_count > 0:
-                if st.button(f"✅ Import {valid_count} valid user(s)", type="primary"):
-                    inserted = import_valid_rows(validated_df)
-                    st.success(f"Imported {inserted} user(s) successfully.")
+                import_clicked = st.button(
+                    f"Import {valid_count} valid user(s)", type="primary", icon=":material/upload_file:"
+                )
+                if import_clicked:
+                    created_users = import_valid_rows(validated_df)
+                    st.success(f"Imported {len(created_users)} user(s) successfully.")
+
+                    if smtp_config:
+                        sent_count = 0
+                        failed_count = 0
+                        for u in created_users:
+                            sent, _ = notify_new_user(
+                                smtp_config, u["email"], u["full_name"], u["department"], u["role"]
+                            )
+                            if sent:
+                                sent_count += 1
+                            else:
+                                failed_count += 1
+                        summary = f"📧 Sent {sent_count} welcome email(s)."
+                        if failed_count:
+                            summary += f" {failed_count} failed."
+                        st.info(summary)
+
                     st.rerun()
             else:
                 st.warning("No valid rows to import.")
@@ -150,7 +270,7 @@ elif page == "✏️ Edit / Delete User":
 
     users = db.get_all_users()
     if not users:
-        st.info("No users available yet. Add a user first.")
+        render_empty_state("No users available yet. Add a user first.")
     else:
         options = {f"{u['full_name']} ({u['email']}) — id {u['id']}": u["id"] for u in users}
         selected_label = st.selectbox("Select a user", list(options.keys()))
@@ -181,8 +301,8 @@ elif page == "✏️ Edit / Delete User":
             )
 
             col_update, col_delete = st.columns(2)
-            update_clicked = col_update.form_submit_button("💾 Update User", type="primary")
-            delete_clicked = col_delete.form_submit_button("🗑️ Delete User")
+            update_clicked = col_update.form_submit_button("Update User", type="primary", icon=":material/save:")
+            delete_clicked = col_delete.form_submit_button("Delete User", icon=":material/delete:")
 
         if update_clicked:
             errors = validate_user_form(full_name, email, phone, exclude_id=selected_id)
@@ -212,7 +332,7 @@ elif page == "⬇️ Export Data":
     df = to_dataframe(users)
 
     if df.empty:
-        st.info("No users to export yet.")
+        render_empty_state("No users to export yet.")
     else:
         st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -220,18 +340,20 @@ elif page == "⬇️ Export Data":
         with col1:
             csv_bytes = df.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download as CSV",
+                "Download as CSV",
                 data=csv_bytes,
                 file_name="users.csv",
                 mime="text/csv",
                 use_container_width=True,
+                icon=":material/download:",
             )
         with col2:
             excel_bytes = to_excel_bytes(df)
             st.download_button(
-                "⬇️ Download as Excel",
+                "Download as Excel",
                 data=excel_bytes,
                 file_name="users.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                icon=":material/download:",
             )
