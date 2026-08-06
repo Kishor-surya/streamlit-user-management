@@ -6,3 +6,15 @@ env/
 users.db
 .streamlit/secrets.toml
 .DS_Store
+
+# Test / coverage / CI artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+test-results.xml
+bandit-report.json
+pip-audit-report.json
+codeql-metrics.json
+dependabot-metrics.json
+site/

@@ -4,58 +4,21 @@ Create, Read, Update, Delete users, with list view, search, and export
 (CSV / Excel) support. Data is persisted in a local SQLite database.
 """
 
-import io
-import re
-
-import pandas as pd
 import streamlit as st
 
 import db
+from utils import (
+    import_valid_rows,
+    parse_upload,
+    to_dataframe,
+    to_excel_bytes,
+    upload_template_bytes,
+    validate_upload_rows,
+    validate_user_form,
+)
 
 st.set_page_config(page_title="User Management", page_icon="👤", layout="wide")
 db.init_db()
-
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-# --------------------------------------------------------------------------- #
-# Helpers
-# --------------------------------------------------------------------------- #
-def to_dataframe(users: list[dict]) -> pd.DataFrame:
-    if not users:
-        return pd.DataFrame(
-            columns=[
-                "id", "full_name", "email", "phone", "age",
-                "department", "role", "status", "created_at", "updated_at",
-            ]
-        )
-    return pd.DataFrame(users)
-
-
-def to_excel_bytes(df: pd.DataFrame) -> bytes:
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Users")
-    return buffer.getvalue()
-
-
-def validate_user_form(full_name, email, phone, exclude_id=None):
-    errors = []
-    if not full_name or not full_name.strip():
-        errors.append("Full name is required.")
-    if not email or not email.strip():
-        errors.append("Email is required.")
-    elif not EMAIL_RE.match(email.strip()):
-        errors.append("Email format is invalid.")
-    elif db.email_exists(email.strip(), exclude_id=exclude_id):
-        errors.append("A user with this email already exists.")
-    if phone and not re.match(r"^[0-9+\-\s()]{6,20}$", phone.strip()):
-        errors.append("Phone number format looks invalid.")
-    return errors
-
-
-def reset_edit_state():
-    st.session_state.pop("editing_user_id", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -64,7 +27,7 @@ def reset_edit_state():
 st.sidebar.title("👤 User Management")
 page = st.sidebar.radio(
     "Navigate",
-    ["📋 User List", "➕ Add User", "✏️ Edit / Delete User", "⬇️ Export Data"],
+    ["📋 User List", "➕ Add User", "📤 Bulk Upload", "✏️ Edit / Delete User", "⬇️ Export Data"],
 )
 
 st.sidebar.markdown("---")
@@ -132,6 +95,52 @@ elif page == "➕ Add User":
             db.add_user(full_name.strip(), email.strip(), phone.strip(), int(age), department, role, status)
             st.success(f"User '{full_name}' added successfully.")
             st.rerun()
+
+# --------------------------------------------------------------------------- #
+# Page: Bulk Upload
+# --------------------------------------------------------------------------- #
+elif page == "📤 Bulk Upload":
+    st.title("📤 Bulk Upload Users")
+    st.caption(
+        "Upload a CSV or Excel file with a `full_name` and `email` column "
+        "(optionally `phone`, `age`, `department`, `role`, `status`)."
+    )
+
+    st.download_button(
+        "⬇️ Download CSV template",
+        data=upload_template_bytes(),
+        file_name="user_upload_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    uploaded_file = st.file_uploader("Choose a CSV or Excel file", type=["csv", "xlsx", "xls"])
+
+    if uploaded_file is not None:
+        try:
+            raw_df = parse_upload(uploaded_file.getvalue(), uploaded_file.name)
+            validated_df = validate_upload_rows(raw_df)
+        except ValueError as e:
+            st.error(str(e))
+        except Exception:
+            st.error("Could not read that file. Make sure it's a valid CSV or Excel file.")
+        else:
+            valid_count = int(validated_df["_valid"].sum())
+            invalid_count = len(validated_df) - valid_count
+
+            st.write(f"**{len(validated_df)} row(s) found** — {valid_count} valid, {invalid_count} with errors.")
+            st.dataframe(
+                validated_df.rename(columns={"_valid": "Valid", "_error": "Error"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            if valid_count > 0:
+                if st.button(f"✅ Import {valid_count} valid user(s)", type="primary"):
+                    inserted = import_valid_rows(validated_df)
+                    st.success(f"Imported {inserted} user(s) successfully.")
+                    st.rerun()
+            else:
+                st.warning("No valid rows to import.")
 
 # --------------------------------------------------------------------------- #
 # Page: Edit / Delete User
