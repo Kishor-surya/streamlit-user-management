@@ -11,6 +11,7 @@ import streamlit as st
 
 import db
 from email_service import SmtpConfig, send_welcome_email
+from inbox_sync import sync_pending_users
 from utils import (
     import_valid_rows,
     parse_upload,
@@ -26,6 +27,7 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 
 st.set_page_config(page_title=APP_NAME, page_icon="🗂️", layout="wide")
 db.init_db()
+inbox_sync_result = sync_pending_users()
 
 CUSTOM_CSS = """
 <style>
@@ -142,6 +144,12 @@ if smtp_config is None:
     st.sidebar.caption("✉️ Welcome emails: not configured — see README.")
 else:
     st.sidebar.caption(f"✉️ Welcome emails: enabled via {smtp_config.host}")
+
+if inbox_sync_result["added"] or inbox_sync_result["deleted"]:
+    st.sidebar.caption(
+        f"🔄 Synced from GitHub Issues: +{inbox_sync_result['added']} added, "
+        f"-{inbox_sync_result['deleted']} removed."
+    )
 
 render_flash_messages()
 

@@ -1,0 +1,93 @@
+name: User Management Request
+description: Add, delete, or bulk-import PeopleDesk users from this repo.
+title: "[User Request]: "
+labels: ["user-management-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A bot validates and queues this request automatically. You'll get a comment on this
+        issue confirming what was queued (or why it was rejected) within a few minutes.
+
+  - type: dropdown
+    id: action
+    attributes:
+      label: Action
+      description: What do you want to do?
+      options:
+        - Add User
+        - Delete User
+        - Bulk Upload
+    validations:
+      required: true
+
+  - type: input
+    id: full_name
+    attributes:
+      label: Full Name
+      description: Required for Add User.
+      placeholder: Jane Doe
+
+  - type: input
+    id: email
+    attributes:
+      label: Email
+      description: Required for Add User and Delete User — used as the unique key.
+      placeholder: jane.doe@example.com
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      description: Optional. Add User only.
+
+  - type: input
+    id: age
+    attributes:
+      label: Age
+      description: Optional. Add User only.
+
+  - type: dropdown
+    id: department
+    attributes:
+      label: Department
+      description: Add User only.
+      options:
+        - Engineering
+        - Sales
+        - Marketing
+        - HR
+        - Finance
+        - Operations
+        - Support
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Role
+      description: Add User only.
+      options:
+        - Admin
+        - Manager
+        - Employee
+        - Contractor
+        - Intern
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      description: Add User only.
+      options:
+        - Active
+        - Inactive
+
+  - type: textarea
+    id: bulk_file
+    attributes:
+      label: Bulk Upload File
+      description: >
+        Bulk Upload only. Drag and drop a .csv or .xlsx file into this box — GitHub attaches
+        it and inserts a link here automatically. Use the same columns as the in-app template
+        (full_name, email, phone, age, department, role, status).
+      placeholder: Drop your file here...

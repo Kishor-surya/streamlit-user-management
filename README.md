@@ -11,6 +11,8 @@ A full-stack user management app built with [Streamlit](https://streamlit.io/) a
 - **Bulk Upload** — import users in bulk from a CSV/Excel file, with per-row validation
 - **Export** — download the full user list as CSV or Excel (.xlsx)
 - **Welcome emails** — optionally notify new users by email when they're added (single or bulk)
+- **GitHub Issues requests** — add/delete/bulk-import users by filing a GitHub issue; a bot
+  validates and queues the request, and the app picks it up on its next restart
 - Persistent storage via a local SQLite database (`users.db`, auto-created)
 - Server-side validation (required fields, email format, duplicate email check)
 
@@ -22,17 +24,24 @@ streamlit-user-management/
 ├── db.py                        # SQLite data access layer
 ├── utils.py                     # Pure helpers (validation, dataframe/excel export) — unit tested
 ├── email_service.py             # Builds/sends the welcome email via SMTP — unit tested
+├── inbox_sync.py                # Applies queued GitHub-issue requests into the DB — unit tested
 ├── assets/                      # Logo and empty-state SVGs used by the UI
+├── data/inbox/                  # pending_add.csv / pending_delete.csv — the issue-request queue
 ├── requirements.txt             # Runtime dependencies
 ├── requirements-dev.txt         # + test/lint/security tooling
-├── tests/                       # pytest unit tests for db.py, utils.py, email_service.py
-├── scripts/build_dashboard.py   # Builds the CI/CD metrics dashboard for GitHub Pages
+├── tests/                       # pytest unit tests for db.py, utils.py, email_service.py, inbox_sync.py, ...
+├── scripts/
+│   ├── build_dashboard.py       # Builds the CI/CD metrics dashboard for GitHub Pages
+│   └── process_user_issue.py    # Parses a user-management-request issue, queues it — unit tested
 └── .github/
+    ├── ISSUE_TEMPLATE/
+    │   └── user-management-request.yml   # Add/Delete/Bulk Upload issue form
     ├── workflows/
     │   ├── ci.yml                # Lint (flake8) + unit tests + coverage (70% gate)
     │   ├── codeql.yml            # CodeQL static analysis (security)
     │   ├── security.yml          # Bandit (SAST) + pip-audit (dependency vulnerabilities)
-    │   └── pages.yml             # Publishes coverage / CodeQL / Dependabot metrics to GitHub Pages
+    │   ├── pages.yml             # Publishes coverage / CodeQL / Dependabot metrics to GitHub Pages
+    │   └── user-request.yml      # Processes user-management-request issues into data/inbox/
     └── dependabot.yml            # Weekly dependency update PRs (pip + github-actions)
 ```
 
@@ -86,6 +95,45 @@ closed or the app reruns from a fresh session. This is a lightweight gate suited
 demo tool, not a substitute for real authentication (no hashing, no rate limiting); rotate the
 default credentials via secrets before sharing the app's URL with anyone.
 
+## Adding Users via GitHub Issues
+
+Anyone with issue access can request a user change without opening the app: go to
+**[Issues → New issue](../../issues/new/choose)** and pick **User Management Request**. Fill in
+an **Action** (Add User / Delete User / Bulk Upload — for bulk, drag a CSV/Excel file into the
+"Bulk Upload File" box) and submit.
+
+What happens next, automatically:
+1. `.github/workflows/user-request.yml` fires on the new issue, runs
+   `scripts/process_user_issue.py` to parse and validate the request.
+2. Valid requests are appended to `data/inbox/pending_add.csv` or `pending_delete.csv` and
+   committed straight to `main` (these are automated data commits, not code changes, so they
+   skip the usual PR review). Invalid requests are rejected with no commit.
+3. The bot comments on the issue with the result and closes it on success.
+4. `main`'s redeploy on Streamlit Community Cloud picks up the new commit; on startup the app
+   calls `inbox_sync.sync_pending_users()`, which applies any inbox rows not already reflected
+   in the database (skipping emails that already exist / deletes for users already gone, so
+   re-running it on every restart is safe).
+
+**Why the queue, instead of writing straight to the database:** GitHub Actions runs on GitHub's
+own infrastructure and has no network path to the Streamlit app's process or its local SQLite
+file, so it can't call `db.add_user()` directly. The repo itself — via this CSV inbox — is the
+only thing both sides can reach.
+
+**Known limitations:**
+- There's a delay between the issue being processed and the change appearing live — typically
+  a couple of minutes, however long Streamlit Cloud takes to redeploy after the `main` push.
+- Duplicate-email checking during issue processing only catches duplicates *within the same
+  request*; it can't see the live database from inside the GitHub Actions runner. The real
+  guard is `db.add_user()`'s `UNIQUE` constraint on `email`, enforced when `inbox_sync` applies
+  the row.
+- If a user added this way is later deleted manually in the app, and the same delete row is
+  never cleared from `pending_delete.csv`, it stays a harmless no-op on future restarts — but
+  the inbox CSVs are only ever appended to, not pruned, so they'll grow over time. Trim them by
+  hand if that matters to you.
+- Requires the repo's Actions to have **Read and write permissions** under **Settings → Actions
+  → General → Workflow permissions** (needed to push the commit and comment/close the issue),
+  and `main` must allow the `github-actions[bot]` to push directly if branch protection is on.
+
 ## Testing
 
 ```bash
@@ -103,6 +151,10 @@ Every push/PR to `main` or `develop` runs:
   CodeQL alert counts, and Dependabot alert counts
 
 Dependabot opens weekly PRs against `develop` for outdated pip and GitHub Actions dependencies.
+
+**`user-request.yml`** runs on a different trigger — a new issue labeled `user-management-request`
+— rather than push/PR, and is the one workflow that commits directly to `main` (see
+[Adding Users via GitHub Issues](#adding-users-via-github-issues)).
 
 ## Notes
 
