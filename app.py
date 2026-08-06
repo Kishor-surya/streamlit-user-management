@@ -89,6 +89,15 @@ def notify_new_user(config, to_email, full_name, department, role):
         return False, str(e)
 
 
+def load_admin_credentials():
+    """Read admin username/password from Streamlit secrets; falls back to admin/admin."""
+    try:
+        admin_secrets = st.secrets["admin"]
+        return admin_secrets.get("username", "admin"), admin_secrets.get("password", "admin")
+    except Exception:
+        return "admin", "admin"
+
+
 def render_empty_state(message: str):
     svg = (ASSETS_DIR / "empty_state.svg").read_text(encoding="utf-8")
     st.markdown(
@@ -142,32 +151,47 @@ render_flash_messages()
 if page == "📋 User List":
     st.title("📋 User List")
 
-    users = db.get_all_users()
-    df = to_dataframe(users)
+    if not st.session_state.get("user_list_authed", False):
+        st.info("🔒 This page is restricted to admins. Sign in to view the user list.")
+        with st.form("user_list_login"):
+            login_user = st.text_input("Username")
+            login_pass = st.text_input("Password", type="password")
+            login_clicked = st.form_submit_button("Sign in", type="primary", icon=":material/lock_open:")
 
-    if df.empty:
-        render_empty_state("No users yet — add one from the **Add User** page.")
+        if login_clicked:
+            admin_user, admin_pass = load_admin_credentials()
+            if login_user == admin_user and login_pass == admin_pass:
+                st.session_state["user_list_authed"] = True
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
     else:
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            search = st.text_input("🔍 Search by name or email")
-        with col2:
-            dept_filter = st.selectbox("Department", ["All"] + db.DEPARTMENTS)
-        with col3:
-            status_filter = st.selectbox("Status", ["All"] + db.STATUSES)
+        users = db.get_all_users()
+        df = to_dataframe(users)
 
-        filtered = df.copy()
-        if search:
-            mask = filtered["full_name"].str.contains(search, case=False, na=False) | \
-                   filtered["email"].str.contains(search, case=False, na=False)
-            filtered = filtered[mask]
-        if dept_filter != "All":
-            filtered = filtered[filtered["department"] == dept_filter]
-        if status_filter != "All":
-            filtered = filtered[filtered["status"] == status_filter]
+        if df.empty:
+            render_empty_state("No users yet — add one from the **Add User** page.")
+        else:
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                search = st.text_input("🔍 Search by name or email")
+            with col2:
+                dept_filter = st.selectbox("Department", ["All"] + db.DEPARTMENTS)
+            with col3:
+                status_filter = st.selectbox("Status", ["All"] + db.STATUSES)
 
-        st.dataframe(filtered, use_container_width=True, hide_index=True)
-        st.caption(f"Showing {len(filtered)} of {len(df)} user(s).")
+            filtered = df.copy()
+            if search:
+                mask = filtered["full_name"].str.contains(search, case=False, na=False) | \
+                       filtered["email"].str.contains(search, case=False, na=False)
+                filtered = filtered[mask]
+            if dept_filter != "All":
+                filtered = filtered[filtered["department"] == dept_filter]
+            if status_filter != "All":
+                filtered = filtered[filtered["status"] == status_filter]
+
+            st.dataframe(filtered, use_container_width=True, hide_index=True)
+            st.caption(f"Showing {len(filtered)} of {len(df)} user(s).")
 
 # --------------------------------------------------------------------------- #
 # Page: Add User

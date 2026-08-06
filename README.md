@@ -5,7 +5,7 @@ A full-stack user management app built with [Streamlit](https://streamlit.io/) a
 ## Features
 
 - **Create** — add new users with name, email, phone, age, department, role, status
-- **Read** — searchable/filterable list of all users
+- **Read** — searchable/filterable list of all users, gated behind an admin sign-in
 - **Update** — edit any existing user's details
 - **Delete** — remove a user
 - **Bulk Upload** — import users in bulk from a CSV/Excel file, with per-row validation
@@ -69,6 +69,22 @@ use_tls = true
 
 If `[email]` isn't configured, the app runs normally and simply skips sending emails.
 `.streamlit/secrets.toml` is git-ignored — never commit real credentials.
+
+## User List Access (admin-only)
+
+The **User List** page is the only page that shows the full roster, so it's gated behind a
+sign-in. Default credentials are `admin` / `admin`; override them via secrets:
+
+```toml
+[admin]
+username = "your-admin-username"
+password = "your-admin-password"
+```
+
+The sign-in is session-scoped (Streamlit `session_state`) — it resets when the browser tab is
+closed or the app reruns from a fresh session. This is a lightweight gate suited to an internal
+demo tool, not a substitute for real authentication (no hashing, no rate limiting); rotate the
+default credentials via secrets before sharing the app's URL with anyone.
 
 ## Testing
 
