@@ -97,6 +97,16 @@ def render_empty_state(message: str):
     )
 
 
+def flash(kind: str, message: str):
+    """Queue a status message to survive the st.rerun() that follows it."""
+    st.session_state.setdefault("_flash_messages", []).append((kind, message))
+
+
+def render_flash_messages():
+    for kind, message in st.session_state.pop("_flash_messages", []):
+        getattr(st, kind)(message)
+
+
 # --------------------------------------------------------------------------- #
 # Sidebar navigation
 # --------------------------------------------------------------------------- #
@@ -123,6 +133,8 @@ if smtp_config is None:
     st.sidebar.caption("✉️ Welcome emails: not configured — see README.")
 else:
     st.sidebar.caption(f"✉️ Welcome emails: enabled via {smtp_config.host}")
+
+render_flash_messages()
 
 # --------------------------------------------------------------------------- #
 # Page: User List
@@ -184,14 +196,14 @@ elif page == "➕ Add User":
                 st.error(err)
         else:
             db.add_user(full_name.strip(), email.strip(), phone.strip(), int(age), department, role, status)
-            st.success(f"User '{full_name}' added successfully.")
+            flash("success", f"User '{full_name}' added successfully.")
 
             if smtp_config:
                 sent, error = notify_new_user(smtp_config, email.strip(), full_name.strip(), department, role)
                 if sent:
-                    st.info(f"📧 Welcome email sent to {email.strip()}.")
+                    flash("info", f"📧 Welcome email sent to {email.strip()}.")
                 else:
-                    st.warning(f"User created, but the welcome email failed to send: {error}")
+                    flash("warning", f"User created, but the welcome email failed to send: {error}")
 
             st.rerun()
 
@@ -240,23 +252,23 @@ elif page == "📤 Bulk Upload":
                 )
                 if import_clicked:
                     created_users = import_valid_rows(validated_df)
-                    st.success(f"Imported {len(created_users)} user(s) successfully.")
+                    flash("success", f"Imported {len(created_users)} user(s) successfully.")
 
                     if smtp_config:
                         sent_count = 0
-                        failed_count = 0
+                        failures = []
                         for u in created_users:
-                            sent, _ = notify_new_user(
+                            sent, error = notify_new_user(
                                 smtp_config, u["email"], u["full_name"], u["department"], u["role"]
                             )
                             if sent:
                                 sent_count += 1
                             else:
-                                failed_count += 1
+                                failures.append(f"{u['email']} ({error})")
                         summary = f"📧 Sent {sent_count} welcome email(s)."
-                        if failed_count:
-                            summary += f" {failed_count} failed."
-                        st.info(summary)
+                        if failures:
+                            summary += f" {len(failures)} failed: " + "; ".join(failures)
+                        flash("info", summary)
 
                     st.rerun()
             else:
@@ -314,12 +326,12 @@ elif page == "✏️ Edit / Delete User":
                     selected_id, full_name.strip(), email.strip(), phone.strip(),
                     int(age), department, role, status,
                 )
-                st.success("User updated successfully.")
+                flash("success", "User updated successfully.")
                 st.rerun()
 
         if delete_clicked:
             db.delete_user(selected_id)
-            st.success("User deleted successfully.")
+            flash("success", "User deleted successfully.")
             st.rerun()
 
 # --------------------------------------------------------------------------- #
