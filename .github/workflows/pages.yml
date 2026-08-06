@@ -42,7 +42,7 @@ jobs:
                  --junitxml=test-results.xml
 
       - name: Fetch CodeQL alert metrics
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -64,7 +64,7 @@ jobs:
             fs.writeFileSync('codeql-metrics.json', JSON.stringify({ total: alerts.length, bySeverity }, null, 2));
 
       - name: Fetch Dependabot alert metrics
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
