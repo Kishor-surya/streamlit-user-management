@@ -141,9 +141,9 @@ def validate_upload_rows(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def import_valid_rows(df: pd.DataFrame) -> int:
-    """Insert every row marked `_valid` into the database. Returns the number inserted."""
-    inserted = 0
+def import_valid_rows(df: pd.DataFrame) -> list[dict]:
+    """Insert every row marked `_valid` into the database. Returns the created user dicts."""
+    created = []
     for _, row in df[df["_valid"]].iterrows():
         age_raw = row.get("age")
         try:
@@ -163,15 +163,19 @@ def import_valid_rows(df: pd.DataFrame) -> int:
         if status not in db.STATUSES:
             status = "Active"
 
+        full_name = _clean(row.get("full_name"))
+        email = _clean(row.get("email")).lower()
         db.add_user(
-            _clean(row.get("full_name")),
-            _clean(row.get("email")).lower(),
+            full_name,
+            email,
             _clean(row.get("phone")),
             age,
             department,
             role,
             status,
         )
-        inserted += 1
+        created.append(
+            {"full_name": full_name, "email": email, "department": department, "role": role, "status": status}
+        )
 
-    return inserted
+    return created
