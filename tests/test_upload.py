@@ -116,9 +116,10 @@ def test_import_valid_rows_inserts_only_valid(temp_db):
         ]
     )
     validated = validate_upload_rows(df)
-    inserted = import_valid_rows(validated)
+    created = import_valid_rows(validated)
 
-    assert inserted == 1
+    assert len(created) == 1
+    assert created[0]["email"] == "alice@example.com"
     users = temp_db.get_all_users()
     assert len(users) == 1
     assert users[0]["email"] == "alice@example.com"
