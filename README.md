@@ -64,8 +64,9 @@ in the project directory on first run.
 
 ## Email Notifications (optional)
 
-To send a welcome email when a user is added (individually or via bulk upload), add SMTP
-credentials to `.streamlit/secrets.toml`:
+To send a welcome email when a user is added — individually, via in-app bulk upload, or via a
+[GitHub Issues request](#adding-users-via-github-issues) — add SMTP credentials to
+`.streamlit/secrets.toml`:
 
 ```toml
 [email]
@@ -110,9 +111,11 @@ What happens next, automatically:
    skip the usual PR review). Invalid requests are rejected with no commit.
 3. The bot comments on the issue with the result and closes it on success.
 4. `main`'s redeploy on Streamlit Community Cloud picks up the new commit; on startup the app
-   calls `inbox_sync.sync_pending_users()`, which applies any inbox rows not already reflected
-   in the database (skipping emails that already exist / deletes for users already gone, so
-   re-running it on every restart is safe).
+   calls `inbox_sync.sync_pending_users()` once (via `st.cache_resource`, not on every rerun),
+   which applies any inbox rows not already reflected in the database (skipping emails that
+   already exist / deletes for users already gone, so re-running it on every restart is safe)
+   and sends the same welcome email as an in-app Add User/Bulk Upload would, if SMTP is
+   configured.
 
 **Why the queue, instead of writing straight to the database:** GitHub Actions runs on GitHub's
 own infrastructure and has no network path to the Streamlit app's process or its local SQLite
