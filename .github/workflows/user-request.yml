@@ -15,7 +15,12 @@ concurrency:
 jobs:
   process:
     name: Process user request issue
-    if: contains(github.event.issue.labels.*.name, 'user-management-request')
+    # Prefer the title prefix the issue form always sets — the "labels:" field in an issue
+    # form YAML only auto-applies if that label already exists in the repo, so relying on it
+    # alone silently skips every request until someone manually creates the label once.
+    if: >-
+      startsWith(github.event.issue.title, '[User Request]:') ||
+      contains(github.event.issue.labels.*.name, 'user-management-request')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
