@@ -126,10 +126,15 @@ only thing both sides can reach.
   request*; it can't see the live database from inside the GitHub Actions runner. The real
   guard is `db.add_user()`'s `UNIQUE` constraint on `email`, enforced when `inbox_sync` applies
   the row.
-- If a user added this way is later deleted manually in the app, and the same delete row is
-  never cleared from `pending_delete.csv`, it stays a harmless no-op on future restarts — but
-  the inbox CSVs are only ever appended to, not pruned, so they'll grow over time. Trim them by
-  hand if that matters to you.
+- The inbox is replayed once per app process (`st.cache_resource`), not on every rerun — deleting
+  or editing a user in the app sticks normally for the rest of that process's life. But the CSVs
+  are append-only and never pruned, so if the app process later restarts fresh (a new deploy, or
+  Streamlit Cloud waking from sleep) while a since-deleted user's row is still sitting in
+  `pending_add.csv`, that row gets replayed again and the user reappears. If you delete someone
+  who arrived via an issue, also remove their row from `pending_add.csv` if you want that to be
+  permanent.
+- Symmetrically, a delete row left in `pending_delete.csv` is a harmless no-op on future restarts
+  once the user is already gone. Trim both CSVs by hand periodically if that matters to you.
 - Requires the repo's Actions to have **Read and write permissions** under **Settings → Actions
   → General → Workflow permissions** (needed to push the commit and comment/close the issue),
   and `main` must allow the `github-actions[bot]` to push directly if branch protection is on.
