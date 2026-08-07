@@ -28,6 +28,30 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 st.set_page_config(page_title=APP_NAME, page_icon="🗂️", layout="wide")
 
 
+def load_smtp_config():
+    """Read SMTP credentials from Streamlit secrets, if configured. Returns None otherwise."""
+    try:
+        email_secrets = st.secrets["email"]
+        return SmtpConfig(
+            sender_email=email_secrets["sender_email"],
+            sender_password=email_secrets["sender_password"],
+            host=email_secrets.get("smtp_host", "smtp.gmail.com"),
+            port=int(email_secrets.get("smtp_port", 587)),
+            use_tls=bool(email_secrets.get("use_tls", True)),
+        )
+    except Exception:
+        return None
+
+
+def notify_new_user(config, to_email, full_name, department, role):
+    """Send a welcome email. Returns (sent: bool, error_message: str | None)."""
+    try:
+        send_welcome_email(to_email, full_name, department, role, config)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 @st.cache_resource
 def bootstrap():
     """Runs once per app process, not on every rerun.
@@ -38,9 +62,22 @@ def bootstrap():
     get silently re-added on the very next interaction, since their email
     would no longer exist in the DB and the inbox row is still sitting
     there unconsumed.
+
+    Also sends welcome emails for anyone added this way — the app.py Add
+    User / Bulk Upload pages already did this for in-UI actions, but the
+    inbox sync itself only ever called db.add_user() directly, so users
+    added via a GitHub issue never got one.
     """
     db.init_db()
-    return sync_pending_users()
+    config = load_smtp_config()
+
+    def on_added(user):
+        if not config:
+            return False
+        sent, _ = notify_new_user(config, user["email"], user["full_name"], user["department"], user["role"])
+        return sent
+
+    return sync_pending_users(on_added=on_added)
 
 
 inbox_sync_result = bootstrap()
@@ -81,30 +118,6 @@ CUSTOM_CSS = """
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
-
-def load_smtp_config():
-    """Read SMTP credentials from Streamlit secrets, if configured. Returns None otherwise."""
-    try:
-        email_secrets = st.secrets["email"]
-        return SmtpConfig(
-            sender_email=email_secrets["sender_email"],
-            sender_password=email_secrets["sender_password"],
-            host=email_secrets.get("smtp_host", "smtp.gmail.com"),
-            port=int(email_secrets.get("smtp_port", 587)),
-            use_tls=bool(email_secrets.get("use_tls", True)),
-        )
-    except Exception:
-        return None
-
-
-def notify_new_user(config, to_email, full_name, department, role):
-    """Send a welcome email. Returns (sent: bool, error_message: str | None)."""
-    try:
-        send_welcome_email(to_email, full_name, department, role, config)
-        return True, None
-    except Exception as e:
-        return False, str(e)
 
 
 def load_admin_credentials():
@@ -162,10 +175,13 @@ else:
     st.sidebar.caption(f"✉️ Welcome emails: enabled via {smtp_config.host}")
 
 if inbox_sync_result["added"] or inbox_sync_result["deleted"]:
-    st.sidebar.caption(
+    sync_caption = (
         f"🔄 Synced on startup from GitHub Issues: +{inbox_sync_result['added']} added, "
         f"-{inbox_sync_result['deleted']} removed."
     )
+    if inbox_sync_result["added"]:
+        sync_caption += f" 📧 {inbox_sync_result['notified']}/{inbox_sync_result['added']} welcome email(s) sent."
+    st.sidebar.caption(sync_caption)
 
 render_flash_messages()
 
