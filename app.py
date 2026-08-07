@@ -26,8 +26,24 @@ APP_NAME = "PeopleDesk"
 ASSETS_DIR = Path(__file__).parent / "assets"
 
 st.set_page_config(page_title=APP_NAME, page_icon="🗂️", layout="wide")
-db.init_db()
-inbox_sync_result = sync_pending_users()
+
+
+@st.cache_resource
+def bootstrap():
+    """Runs once per app process, not on every rerun.
+
+    sync_pending_users() replays data/inbox/*.csv, which is only ever
+    appended to. If it ran on every script rerun (Streamlit's default for
+    top-level code), deleting a user that arrived via a GitHub issue would
+    get silently re-added on the very next interaction, since their email
+    would no longer exist in the DB and the inbox row is still sitting
+    there unconsumed.
+    """
+    db.init_db()
+    return sync_pending_users()
+
+
+inbox_sync_result = bootstrap()
 
 CUSTOM_CSS = """
 <style>
@@ -147,7 +163,7 @@ else:
 
 if inbox_sync_result["added"] or inbox_sync_result["deleted"]:
     st.sidebar.caption(
-        f"🔄 Synced from GitHub Issues: +{inbox_sync_result['added']} added, "
+        f"🔄 Synced on startup from GitHub Issues: +{inbox_sync_result['added']} added, "
         f"-{inbox_sync_result['deleted']} removed."
     )
 
